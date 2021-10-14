@@ -1,12 +1,15 @@
 require(runjags)
 require(rjags)
+require(cubature)
+require(mvtnorm)
 
-get_LSAI <- function(Z, alpha, Sigma){
+# functions to calculate LSI from MCMC output of a latent space model
+
+get_LSI_integral <- function(Z, alpha, Sigma){
   N <- nrow(Z) # number of individuals
-  LSAI <- matrix(0, nrow = N, ncol = N) # matrix to hold LSAI
+  LSI <- matrix(0, nrow = N, ncol = N) # matrix to hold LSAI
   D = ncol(Z) #dimensions of latent space
   for(i in 1:(N-1)){
-    print(i)
     for(j in (i+1):N){
       z1 <- Z[i,] # location of i
       z2 <- Z[j,] # location of j
@@ -26,13 +29,32 @@ get_LSAI <- function(Z, alpha, Sigma){
       # probability of neither individual
       pneither <- hcubature(fneither, lowerLimit = rep(-Inf,D), upperLimit = rep(Inf,D), tol = 1e-4)$integral
       # latent space association index
-      LSAI[i,j] <- LSAI[j,i] <- pboth/(1 - pneither)
+      LSI[i,j] <- LSI[j,i] <- pboth/(1 - pneither)
     }
   }
-  return(LSAI)
+  return(LSI)
+}
+get_LSI_MonteCarlo <- function(Z,alpha,Sigma,nsim){
+  N <- nrow(Z) # number of individuals
+  LSI <- matrix(0, nrow = N, ncol = N) # matrix to hold LSAI
+  D = ncol(Z) #dimensions of latent space
+  groups <- MASS::mvrnorm(nsim,rep(0,D),Sigma) # get simulated groups
+  # get the probability that each individual is in each simulated group
+  p_in <- apply(Z, 1, function(z){
+    apply(groups, 1, function(w){
+      plogis(alpha - sqrt(sum((z-w)^2)))
+    })
+  })
+  pboth <- (t(p_in)%*%p_in)/nsim # probability of both
+  pneither <- (t(1-p_in)%*%(1-p_in))/nsim #probability of either
+  LSI <- pboth/(1-pneither) # LSI
+  diag(LSI) <- 0
+  return(LSI)
 }
 
-fit_LSAI <- function(gbi, D = 2, nthin = 100, ...){
+# function to fit the model and get the LSI matrices
+
+fit_LSI <- function(gbi, D = 2, thin = 50, method = "MC", ...){
  
   G <- nrow(gbi)
   N <- ncol(gbi)
@@ -67,7 +89,9 @@ fit_LSAI <- function(gbi, D = 2, nthin = 100, ...){
 
  }"
   
-est_model <- run.jags(latent_space_GoG,
+ print("Estimating Model Parameters")
+  
+ est_model <- run.jags(modelstring,
                         data = list(
                           gbi = gbi,
                           N = N,
@@ -81,21 +105,25 @@ est_model <- run.jags(latent_space_GoG,
   
   est_mcmc <- do.call(rbind,est_model$mcmc)
   
-  LSAI <- array(dim = c(nthin,N,N))
-  thin_samp <- sample(nrow(est_mcmc),nthin)
+  print("Calculating LSI from model posterior")
   
-  for(i in 1:nthin){
-    s <- thin_samp[i]
-    Zest <- matrix(est_mcmc[s,substr(colnames(est_mcmc),1,1) == "Z"],nrow=N,ncol=D)
-    alpha <- est_mcmc[s,"alpha"]
-    Sigma <- solve(matrix(est_mcmc[s,substr(colnames(est_mcmc),1,3) == "iSw"],nrow=D,ncol=D))
-    LSAI[i,,] <- get_LSAI(Zest,alpha,Sigma)
-    plot(apply(LSAI,c(2,3),mean,na.rm=T) ~ true_SRI)
-    abline(a = 0, b = 1)
-    plot(est_SRI ~ true_SRI)
-    abline(a = 0, b = 1)
+  index <- seq(thin,nrow(est_mcmc),thin)
+  LSI <- array(dim = c(length(index),N,N))
+  
+  pb <- txtProgressBar(min = 0, max = length(index), style = 3)
+  
+  for(i in 1:length(index)){
+    setTxtProgressBar(pb,i)
+    Zest <- matrix(est_mcmc[index[i],substr(colnames(est_mcmc),1,1) == "Z"],nrow=N,ncol=D)
+    alpha <- est_mcmc[index[i],"alpha"]
+    Sigma <- solve(matrix(est_mcmc[index[i],substr(colnames(est_mcmc),1,3) == "iSw"],nrow=D,ncol=D))
+    if(method == "MC"){
+      LSI[i,,] <- get_LSI_MonteCarlo(Zest,alpha,Sigma,nsim=10000)
+    }else{
+      LSI[i,,] <- get_LSI_integral(Zest,alpha,Sigma)
+    }
   }
   
-  return(LSAI)
+  return(LSI)
   
 }

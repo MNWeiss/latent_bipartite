@@ -54,7 +54,7 @@ simulate_groups <- function(N,M,mean_gs,delta){
 
 simulate_sampling <- function(groups, nsamp){
   do.call(rbind,
-          lapply(groups[sample(length(all_groups),nsamp)], function(z){
+          lapply(groups[sample(length(groups),nsamp)], function(z){
             z[sample(nrow(z),1),,drop=F]
           }))
 }
