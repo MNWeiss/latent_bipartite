@@ -39,7 +39,7 @@ for(i in 1:nrow(params)){
     
     # Fit the LSI
     
-    LSI <- fit_LSI(gbi,D=2,thin=400,adapt=100000,sample=100000,n.chains=4)
+    LSI <- fit_LSI(gbi,D=2,thin=400,adapt=1000,sample=50000,n.chains=4)
     
     # Get CIs and error for each dyad
     

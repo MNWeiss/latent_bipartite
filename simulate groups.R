@@ -2,6 +2,7 @@ generate_groups <- function(B, M, mean_gs){
   N <- nrow(B) # number of individuals
   groups <- list() # list to hold GBI for each sampling period
   for(i in 1:M){
+    print(i/M)
     gs <- 0 # initialize group sizes
     for(j in 1:N){
       repeat{
@@ -38,18 +39,26 @@ generate_groups <- function(B, M, mean_gs){
   return(groups) # return the GBI
 }
 
-generate_preferences <- function(N,delta){
+generate_preferences <- function(N, gregariousness = F, community = F, delta, n_comm, comm_pref, gamma){
   # set up a preference matrix
   B <- matrix(data = runif(N*N,-delta, delta), nrow = N, ncol = N)
-  diag(B) <- 0 
+  if(community){
+    comm <- sample(n_comm, N, rep = T)
+    comm_effect <- sapply(comm, function(z){
+      ifelse(comm == z, comm_pref, -comm_pref)
+    })
+    B <- B + comm_effect
+  }
+  if(gregariousness){
+    g <- runif(N,-gamma,gamma)
+    jg <- sapply(g, function(z){
+      z + g
+    })
+    B <- B + jg
+  }
+  diag(B) <- 0
   B[upper.tri(B)] <- t(B)[upper.tri(B)]
   return(B)
-}
-
-simulate_groups <- function(N,M,mean_gs,delta){
-  B <- generate_preferences(N,delta)
-  groups <- generate_groups(B,M,mean_gs=mean_gs)
-  return(groups)
 }
 
 simulate_sampling <- function(groups, nsamp){
